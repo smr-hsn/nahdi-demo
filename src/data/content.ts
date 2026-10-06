@@ -38,7 +38,7 @@ export const categories: Category[] = [
     image: '/images/moisturizers.jpg',
     suggestedQuestions: [
       'Best moisturizer for dry winter skin?',
-      'Gel vs cream moisturizer — which do I need?',
+      'Recommend a lightweight gel moisturizer',
       'Can I use moisturizer under sunscreen?',
     ],
   },

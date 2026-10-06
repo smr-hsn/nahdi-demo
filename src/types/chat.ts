@@ -55,7 +55,7 @@ export const DEFAULT_SUGGESTED_QUESTIONS = [
   "What's best for oily skin?",
   'Recommend sunscreen for sensitive skin.',
   'Suggest a skincare routine.',
-  'Which serum is suitable for dry skin?',
+  'Recommend a hydrating serum',
 ] as const
 
 export const WELCOME_MESSAGE =
