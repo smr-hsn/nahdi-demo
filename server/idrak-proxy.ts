@@ -1,5 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isConfigured, type IdrakConfig } from './idrak-config.ts'
+import { randomUUID } from 'node:crypto'
+import {
+  isChatConfigured,
+  isVoiceConfigured,
+  type IdrakConfig,
+} from './idrak-config.ts'
 import {
   extractAskAnswer,
   extractAskError,
@@ -10,7 +15,7 @@ import {
 import { rateLimit } from './rate-limit.ts'
 
 const ASK_TIMEOUT_MS = 30_000
-const VOICE_TIMEOUT_MS = 15_000
+const VOICE_TIMEOUT_MS = 30_000
 const MAX_QUESTION = 4000
 const SESSION_ID_RE = /^[A-Za-z0-9:_-]{1,128}$/
 
@@ -86,6 +91,7 @@ async function idrakFetch(
   path: string,
   body: unknown,
   timeoutMs: number,
+  apiKey: string = config.apiKey,
 ): Promise<{ status: number; json: unknown; ok: boolean }> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -94,8 +100,32 @@ async function idrakFetch(
       method: 'POST',
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const json = (await response.json().catch(() => ({}))) as unknown
+    return { status: response.status, json, ok: response.ok }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function realtimeTokenFetch(
+  config: IdrakConfig,
+  body: unknown,
+): Promise<{ status: number; json: unknown; ok: boolean }> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), VOICE_TIMEOUT_MS)
+  try {
+    const response = await fetch(`${config.voiceTokenBaseUrl}/realtime/token`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'x-api-key': config.realtimeTokenApiKey,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -138,15 +168,26 @@ export async function handleIdrakProxy(
 
   if (pathname === '/api/assistant/health' && req.method === 'GET') {
     json(req, res, config, 200, {
-      ok: isConfigured(config),
-      configured: isConfigured(config),
+      ok: isChatConfigured(config),
+      configured: isChatConfigured(config),
     })
     return true
   }
 
-  if (!isConfigured(config)) {
+  if (pathname === '/api/assistant/chat' && req.method === 'POST' && !isChatConfigured(config)) {
     json(req, res, config, 503, {
       error: 'The assistant is temporarily unavailable. Please try again later.',
+    })
+    return true
+  }
+
+  if (
+    pathname === '/api/assistant/voice/session' &&
+    req.method === 'POST' &&
+    !isVoiceConfigured(config)
+  ) {
+    json(req, res, config, 503, {
+      error: 'The voice assistant is temporarily unavailable. Please try again later.',
     })
     return true
   }
@@ -195,6 +236,7 @@ export async function handleIdrakProxy(
         '/api/public/agents/ask',
         { question, session_id: sessionId, temperature },
         ASK_TIMEOUT_MS,
+        config.chatApiKey,
       )
 
       if (!upstream.ok) {
@@ -255,21 +297,22 @@ export async function handleIdrakProxy(
       return true
     }
 
-    const agentId = encodeURIComponent(config.agentId)
-
     try {
-      const upstream = await idrakFetch(
+      const upstream = await realtimeTokenFetch(
         config,
-        `/api/public/agents/${agentId}/voice/session`,
         {
-          agentId: config.agentId,
-          user_id: userId,
           session_id: sessionId,
+          knowledgebase: 'nahdi',
+          user_id: userId,
+          room_name: `nahdi_${randomUUID()}`,
+          participant_name: 'Nahdi Demo Visitor',
           language_mode: 'en',
-          dialect: 'en_us',
+          arabic_dialect: 'none',
           voice_id: 'female_01',
+          system_prompt:
+            'You are Nahdi’s warm, knowledgeable skincare advisor speaking in a live voice conversation. Sound natural, calm, and polished. Keep replies concise by default (about 2–4 short sentences); expand only when asked. Never read markdown, bullet symbols, URLs, or formatting aloud. When giving a routine, guide the listener through a few steps in spoken order. When recommending a product, say its name, the relevant benefit, who it may suit, and one practical use tip, using only information available to you. Ask at most one brief follow-up question when it would help personalize the advice. Avoid repetition, unsupported claims, and medical diagnoses; suggest a dermatologist for persistent or serious concerns.',
+          metadata_filters: {},
         },
-        VOICE_TIMEOUT_MS,
       )
 
       if (!upstream.ok) {

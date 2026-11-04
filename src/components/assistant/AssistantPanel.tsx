@@ -66,8 +66,7 @@ export function AssistantPanel({
     if (isOpen) panelRef.current?.focus()
   }, [isOpen])
 
-  const showSuggestions =
-    mode === 'text' && messages.filter((m) => m.role === 'user').length === 0
+  const hasSentMessage = messages.some((message) => message.role === 'user')
 
   return (
     <AnimatePresence>
@@ -93,29 +92,31 @@ export function AssistantPanel({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 18, scale: 0.96 }}
             transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            className="pointer-events-auto fixed z-[80] flex flex-col overflow-hidden border border-blush-200/70 bg-white shadow-lift outline-none max-md:inset-x-0 max-md:bottom-0 max-md:h-[min(90dvh,760px)] max-md:rounded-t-[1.75rem] max-md:pb-[max(env(safe-area-inset-bottom),var(--keyboard-inset,0px))] md:bottom-8 md:right-6 md:h-[min(720px,calc(100dvh-5.5rem))] md:w-[440px] md:rounded-[1.75rem]"
+            className="pointer-events-auto fixed z-[80] flex flex-col overflow-hidden border border-slate-700/80 bg-slate-900 text-slate-100 shadow-2xl shadow-rose-950/25 outline-none max-md:inset-x-0 max-md:bottom-0 max-md:h-[min(90dvh,760px)] max-md:rounded-t-[1.75rem] max-md:pb-[max(env(safe-area-inset-bottom),var(--keyboard-inset,0px))] md:bottom-5 md:right-5 md:h-[min(640px,85vh)] md:w-[min(420px,calc(100vw-2.5rem))] md:rounded-[1.75rem]"
           >
             <h2 id={titleId} className="sr-only">
               AI Skincare Advisor
             </h2>
 
-            <CallToAssistant
-              voiceState={voiceState}
-              voiceError={voiceError}
-              muted={muted}
-              callStartedAt={callStartedAt}
-              onStartCall={onStartVoice}
-              onEndCall={onEndVoice}
-              onToggleMute={onToggleMute}
-            />
+            <div className="space-y-2.5 border-b border-slate-800/80 bg-gradient-to-b from-slate-950/95 to-slate-900/95 p-3.5">
+              <CallToAssistant
+                voiceState={voiceState}
+                voiceError={voiceError}
+                muted={muted}
+                callStartedAt={callStartedAt}
+                onStartCall={onStartVoice}
+                onEndCall={onEndVoice}
+                onToggleMute={onToggleMute}
+              />
 
-            <AssistantHeader
-              contextLabel={contextLabel}
-              isAvailable={isAvailable}
-              checkedAt={checkedAt}
-              onClose={onClose}
-              onMinimize={onClose}
-            />
+              <AssistantHeader
+                contextLabel={contextLabel}
+                isAvailable={isAvailable}
+                checkedAt={checkedAt}
+                onClose={onClose}
+                onMinimize={onClose}
+              />
+            </div>
 
             {mode === 'voice' ? (
               <VoiceCallView
@@ -133,7 +134,8 @@ export function AssistantPanel({
                   messages={messages}
                   isSending={isSending}
                   suggestedQuestions={suggestedQuestions}
-                  showSuggestions={showSuggestions}
+                  showSuggestions
+                  collapseSuggestions={hasSentMessage}
                   onSelectQuestion={onSend}
                 />
                 <ChatInput

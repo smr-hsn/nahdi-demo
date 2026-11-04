@@ -3,11 +3,11 @@ import { WELCOME_MESSAGE } from '../../types/chat'
 export function WelcomeMessage() {
   return (
     <div
-      className="rounded-2xl border border-blush-200/90 bg-white/95 px-4 py-3.5 text-sm leading-6 text-navy-800 shadow-soft"
+      className="rounded-2xl border border-slate-700/80 bg-slate-800/70 px-4 py-3.5 text-sm leading-6 text-slate-300"
       role="status"
     >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-coral-500">
-        Welcome
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-300">
+        Your skincare advisor
       </p>
       <p className="mt-1.5">{WELCOME_MESSAGE}</p>
     </div>

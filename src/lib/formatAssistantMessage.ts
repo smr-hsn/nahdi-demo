@@ -8,7 +8,7 @@ export type TextSegment =
 export type AssistantBlock =
   | { type: 'paragraph'; segments: TextSegment[] }
   | { type: 'heading'; text: string }
-  | { type: 'list'; items: TextSegment[][] }
+  | { type: 'list'; items: TextSegment[][]; ordered?: boolean }
   | {
       type: 'product'
       name: string
@@ -33,6 +33,21 @@ export function isSafeHttpUrl(value: string): boolean {
   } catch {
     return false
   }
+}
+
+function normalizeLinkedImages(raw: string): { text: string; products: ProductLink[] } {
+  const products: ProductLink[] = []
+  const pattern =
+    /\[!\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\]\((https?:\/\/[^)\s]+)\)/g
+  const text = raw.replace(pattern, (_match, rawName: string, rawImageUrl: string, rawUrl: string) => {
+    const name = rawName.trim()
+    const imageUrl = trimUrl(rawImageUrl)
+    const url = trimUrl(rawUrl)
+    if (!name || !isSafeHttpUrl(imageUrl) || !isSafeHttpUrl(url)) return _match
+    products.push({ name, url, imageUrl })
+    return `\n- **${name}**\n- Product link: ${url}\n`
+  })
+  return { text, products }
 }
 
 function trimUrl(value: string): string {
@@ -127,14 +142,31 @@ function headingText(line: string): string | null {
 function fieldFromBullet(line: string): { label: string; value: string } | null {
   const match = line.match(/^[-*•]\s+([^:]{1,40}):\s*(.+)$/)
   if (!match?.[1] || !match[2]) return null
-  const label = match[1].trim()
+  const label = match[1].replace(/\*\*/g, '').trim()
   const value = match[2].replace(/<((?:https?:\/\/)[^>\s]+)>/gi, '$1').trim()
   if (/^product link$/i.test(label)) return { label: 'Product link', value }
   return { label, value }
 }
 
+function productTitleFromBullet(line: string): string | null {
+  const match = line.match(/^[-*•]\s+\*\*([^*]+)\*\*\s*$/)
+  return match?.[1]?.trim() || null
+}
+
+function isStepHeading(text: string): boolean {
+  return /^step\s+\d+\s*[:.)-]/i.test(text)
+}
+
 function isBullet(line: string) {
   return /^[-*•]\s+/.test(line)
+}
+
+function isListItem(line: string) {
+  return /^[-*•]\s+/.test(line) || /^\d+[.)]\s+/.test(line)
+}
+
+function listItemText(line: string) {
+  return line.replace(/^(?:[-*•]|\d+[.)])\s+/, '')
 }
 
 function normalizeProductLinks(text: string): string {
@@ -153,12 +185,22 @@ export function parseAssistantContent(
   raw: string,
   extraProducts: ProductLink[] = [],
 ): { blocks: AssistantBlock[]; products: ProductLink[] } {
-  const text = normalizeProductLinks(
+  const normalizedImages = normalizeLinkedImages(
     raw.replace(/\r\n/g, '\n').replace(/\t/g, ' ').trim(),
   )
+  const text = normalizeProductLinks(normalizedImages.text)
   const fromText = extractLinks(text)
   const products = [...extraProducts]
   const seen = new Set(products.map((p) => p.url))
+  for (const item of normalizedImages.products) {
+    if (seen.has(item.url)) {
+      const existing = products.find((product) => product.url === item.url)
+      if (existing && !existing.imageUrl) existing.imageUrl = item.imageUrl
+      continue
+    }
+    seen.add(item.url)
+    products.push(item)
+  }
   for (const item of fromText) {
     if (seen.has(item.url)) continue
     seen.add(item.url)
@@ -169,6 +211,7 @@ export function parseAssistantContent(
   const blocks: AssistantBlock[] = []
   let paragraph: string[] = []
   let list: string[] = []
+  let orderedList = false
   let pendingFields: { label: string; value: string }[] = []
   const state = { product: null as ProductDraft | null }
 
@@ -181,8 +224,13 @@ export function parseAssistantContent(
 
   const flushList = () => {
     if (!list.length) return
-    blocks.push({ type: 'list', items: list.map((item) => inlineSegments(item)) })
+    blocks.push({
+      type: 'list',
+      items: list.map((item) => inlineSegments(item)),
+      ordered: orderedList,
+    })
     list = []
+    orderedList = false
   }
 
   const takePendingFields = () => {
@@ -223,6 +271,13 @@ export function parseAssistantContent(
 
     const heading = headingText(line)
     if (heading) {
+      if (isStepHeading(heading)) {
+        flushParagraph()
+        flushList()
+        flushProduct()
+        blocks.push({ type: 'heading', text: heading })
+        continue
+      }
       startProduct(heading)
       continue
     }
@@ -252,8 +307,15 @@ export function parseAssistantContent(
       flushProduct()
     }
 
-    if (isBullet(line)) {
+    if (isListItem(line)) {
+      const isOrdered = /^\d+[.)]\s+/.test(line)
+      if (list.length && orderedList !== isOrdered) flushList()
       flushParagraph()
+      const productTitle = productTitleFromBullet(line)
+      if (productTitle) {
+        startProduct(productTitle)
+        continue
+      }
       const field = fieldFromBullet(line)
       if (field?.label === 'Product link' && isSafeHttpUrl(trimUrl(field.value))) {
         const url = trimUrl(field.value)
@@ -264,7 +326,8 @@ export function parseAssistantContent(
         pendingFields.push(field)
         continue
       }
-      list.push(line.replace(/^[-*•]\s+/, ''))
+      orderedList = isOrdered
+      list.push(listItemText(line))
       continue
     }
 

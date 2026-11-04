@@ -121,6 +121,21 @@ body {
   animation: voice-bar 0.9s ease-in-out infinite;
 }
 
+.assistant-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.assistant-scrollbar::-webkit-scrollbar {
+  width: 2px;
+  height: 2px;
+}
+
+.assistant-scrollbar::-webkit-scrollbar-track,
+.assistant-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

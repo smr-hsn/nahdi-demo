@@ -46,7 +46,7 @@ export function VoiceCallView({
   const inCall = LIVE.includes(voiceState)
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-5 bg-gradient-to-b from-navy-900 to-navy-950 px-6 py-8 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-5 bg-gradient-to-b from-slate-900 to-slate-950 px-6 py-8 text-center">
       <div className="relative">
         <span
           className={`absolute inset-0 rounded-full ${
@@ -54,8 +54,10 @@ export function VoiceCallView({
           }`}
           aria-hidden
         />
-        <div className="relative flex size-24 items-center justify-center rounded-full bg-white/10 text-gold-400 ring-1 ring-white/15">
-          <span className="font-display text-3xl text-white">AI</span>
+        <div className="relative flex size-24 items-center justify-center rounded-full bg-gradient-to-tr from-rose-500/20 to-amber-300/10 text-rose-200 ring-1 ring-rose-300/20">
+          <span className="flex size-16 items-center justify-center rounded-full bg-slate-950/80">
+            <Mic className="size-7" aria-hidden />
+          </span>
         </div>
       </div>
 
@@ -63,7 +65,7 @@ export function VoiceCallView({
         <p className="font-display text-2xl font-semibold text-white">
           {headline(voiceState)}
         </p>
-        <p className="mt-2 max-w-xs text-sm text-blush-100/70">
+        <p className="mt-2 max-w-xs text-sm text-slate-400">
           {voiceError ??
             (voiceState === 'speaking'
               ? 'The assistant is speaking. Audio is playing through your speakers.'
@@ -83,7 +85,7 @@ export function VoiceCallView({
             <span
               key={i}
               className={`voice-bar w-1 rounded-full ${
-                voiceState === 'speaking' ? 'bg-gold-400' : 'bg-coral-400'
+                voiceState === 'speaking' ? 'bg-amber-300' : 'bg-rose-400'
               }`}
               style={{ animationDelay: `${i * 0.12}s` }}
             />
@@ -96,7 +98,7 @@ export function VoiceCallView({
           <button
             type="button"
             onClick={onRetryCall}
-            className="inline-flex items-center gap-2 rounded-full bg-coral-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-coral-600"
+            className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700"
           >
             <Phone className="size-4" aria-hidden />
             Retry Call
@@ -106,7 +108,7 @@ export function VoiceCallView({
           <button
             type="button"
             onClick={onToggleMute}
-            className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
           >
             {muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
             {muted ? 'Unmute' : 'Mute'}
@@ -116,7 +118,7 @@ export function VoiceCallView({
           <button
             type="button"
             onClick={onEndCall}
-            className="inline-flex items-center gap-2 rounded-full bg-coral-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-coral-600"
+            className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700"
           >
             <PhoneOff className="size-4" aria-hidden />
             End Call
@@ -125,7 +127,7 @@ export function VoiceCallView({
         <button
           type="button"
           onClick={onSwitchToText}
-          className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+          className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
         >
           <MessageSquareText className="size-4" aria-hidden />
           Text Chat

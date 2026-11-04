@@ -86,6 +86,22 @@ export function extractProductsFromText(text: string): ExtractedProduct[] {
   if (!text.trim()) return []
   const seen = new Set<string>()
   const products: ExtractedProduct[] = []
+  const linkedImagePattern =
+    /\[!\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\]\((https?:\/\/[^)\s]+)\)/g
+  const textWithoutLinkedImages = text.replace(
+    linkedImagePattern,
+    (_match, rawName: string, rawImageUrl: string, rawUrl: string) => {
+      const name = rawName.trim()
+      const url = rawUrl.replace(/[),.;]+$/g, '').trim()
+      const imageUrl = rawImageUrl.replace(/[),.;]+$/g, '').trim()
+      if (!name || !isHttpUrl(url) || !isHttpUrl(imageUrl) || seen.has(url)) {
+        return ''
+      }
+      seen.add(url)
+      products.push({ name, url, imageUrl })
+      return ''
+    },
+  )
   const patterns = [
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     /<\s*(https?:\/\/[^>\s]+)\s*>/g,
@@ -93,7 +109,7 @@ export function extractProductsFromText(text: string): ExtractedProduct[] {
   ]
 
   for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
+    for (const match of textWithoutLinkedImages.matchAll(pattern)) {
       const url = (match[2] || match[1] || match[0] || '').replace(/[),.;]+$/g, '').trim()
       const name = (match[2] ? match[1] : '').trim()
       if (!url || !isHttpUrl(url) || seen.has(url)) continue
@@ -236,5 +252,13 @@ export function extractVoiceError(payload: unknown, status: number): string {
   const errorObj = asRecord(error)
   const nested = asString(errorObj?.message)
   if (nested) return nested
+  const detail = root?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail.trim()
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => asString(asRecord(item)?.msg))
+      .filter((message): message is string => Boolean(message))
+    if (messages.length) return messages.join(' ')
+  }
   return asString(root?.message) || `Voice session failed (${status})`
 }

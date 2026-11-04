@@ -10,6 +10,7 @@ type MessageListProps = {
   isSending: boolean
   suggestedQuestions: string[]
   showSuggestions: boolean
+  collapseSuggestions: boolean
   onSelectQuestion: (question: string) => void
 }
 
@@ -18,6 +19,7 @@ export function MessageList({
   isSending,
   suggestedQuestions,
   showSuggestions,
+  collapseSuggestions,
   onSelectQuestion,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -28,29 +30,32 @@ export function MessageList({
   }, [messages, isSending, showSuggestions])
 
   return (
-    <div
-      ref={scrollerRef}
-      className="flex-1 space-y-4 overflow-y-auto overscroll-contain bg-gradient-to-b from-blush-50 to-cream px-4 py-5 sm:px-5"
-      aria-live="polite"
-      aria-relevant="additions"
-    >
-      <WelcomeMessage />
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950">
+      <div
+        ref={scrollerRef}
+        className="assistant-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-16 sm:px-5"
+        aria-live="polite"
+        aria-relevant="additions"
+      >
+        <WelcomeMessage />
 
-      {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
-      ))}
+        {messages.map((message) => (
+          <MessageBubble key={message.id} message={message} />
+        ))}
 
-      {isSending && <TypingIndicator />}
+        {isSending && <TypingIndicator />}
 
-      {showSuggestions && !isSending && (
+        <div ref={bottomRef} />
+      </div>
+
+      {showSuggestions && (
         <SuggestedQuestions
           questions={suggestedQuestions}
           disabled={isSending}
+          collapsed={collapseSuggestions}
           onSelect={onSelectQuestion}
         />
       )}
-
-      <div ref={bottomRef} />
     </div>
   )
 }
