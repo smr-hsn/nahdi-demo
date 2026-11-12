@@ -42,6 +42,11 @@ Open http://localhost:5173/
 
 - The browser talks only to `/api/assistant/*`. The IDRAK bearer key stays on the server.
 - Chat sends `{ question, session_id, temperature }` to `/api/public/agents/ask` with `IDRAK_CHAT_API_KEY` as a Bearer token. It falls back to `IDRAK_API_KEY` if no chat-specific key is set.
-- Voice sends `{ user_id, session_id }` to `/api/assistant/voice/session`, then requests a LiveKit token from `/realtime/token` using `REALTIME_TOKEN_API_KEY` (or `VOICE_SERVER_API_KEY`) and `VOICE_TOKEN_BASE_URL` (or `VOICE_SERVER_BASE_URL`).
+- Voice sends `{ user_id, session_id, voice_id }` to `/api/assistant/voice/session`, then requests a LiveKit token from `/realtime/token` using `REALTIME_TOKEN_API_KEY` (or `VOICE_SERVER_API_KEY`) and `VOICE_TOKEN_BASE_URL` (or `VOICE_SERVER_BASE_URL`). Supported speaker IDs are `female_01` and `male_01`.
 - Voice needs microphone permission and a Chromium-based browser for the most reliable LiveKit audio.
 - This is a demo, not medical advice. Product names and links appear only when the agent returns them.
+- Chat and Voice share one assistant panel but use separate session IDs. Live voice transcripts stay in Voice mode and never become Chat messages.
+- Voice captions are transient: user speech appears while it is being recognized, advisor speech appears while it is being spoken, then the caption collapses to leave room for product cards.
+- After a voice response, an isolated product lookup matches only products named in that response; its generated prose is not displayed or added to either conversation.
+- Product cards show the product-page image preview, available product details, and a link at the bottom. When the agent does not return an image URL, `/api/assistant/product-preview` reads Open Graph image metadata from Nahdi product pages only.
+- The current chat endpoint returns a completed JSON response rather than a text stream, so the UI does not simulate partial answer streaming.

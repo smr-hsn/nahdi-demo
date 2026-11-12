@@ -190,7 +190,7 @@ export const faqs: FaqItem[] = [
     id: '4',
     question: 'Are product prices and reviews shown?',
     answer:
-      'Not in this demo. We intentionally avoid inventing prices, ratings, or customer claims. When connected to a real catalog, recommendations can surface verified product details only.',
+      'Only when the connected catalog returns verified price or rating data. This demo omits those details when they are not provided rather than guessing.',
   },
   {
     id: '5',

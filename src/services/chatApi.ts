@@ -3,6 +3,7 @@ import type {
   ProductLink,
   SendMessageResult,
   VoiceSessionResult,
+  VoiceSpeakerId,
 } from '../types/chat'
 import { getVisitorIds } from './session'
 
@@ -34,7 +35,14 @@ function sanitizeProducts(raw: ProductLink[] | undefined): ProductLink[] | undef
       typeof item.imageUrl === 'string' && isSafeHttpUrl(item.imageUrl)
         ? item.imageUrl
         : undefined
-    products.push({ name, url, imageUrl })
+    const price = typeof item.price === 'string' && item.price.trim() ? item.price.trim() : undefined
+    const rating =
+      typeof item.rating === 'string' && item.rating.trim() ? item.rating.trim() : undefined
+    const ratingCount =
+      typeof item.ratingCount === 'string' && item.ratingCount.trim()
+        ? item.ratingCount.trim()
+        : undefined
+    products.push({ name, url, imageUrl, price, rating, ratingCount })
   }
   return products.length ? products : undefined
 }
@@ -116,8 +124,10 @@ export async function sendChatMessage(
   }
 }
 
-export async function startVoiceSession(): Promise<VoiceSessionResult> {
-  const ids = getVisitorIds()
+export async function startVoiceSession(
+  voiceId: VoiceSpeakerId,
+  ids = getVisitorIds(),
+): Promise<VoiceSessionResult> {
   try {
     const response = await fetch(`${PROXY_PREFIX}/voice/session`, {
       method: 'POST',
@@ -128,6 +138,7 @@ export async function startVoiceSession(): Promise<VoiceSessionResult> {
       body: JSON.stringify({
         user_id: ids.visitorId,
         session_id: ids.voiceSessionId,
+        voice_id: voiceId,
       }),
       signal: AbortSignal.timeout(16000),
     })

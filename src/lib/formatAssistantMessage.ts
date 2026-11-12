@@ -22,6 +22,16 @@ type ProductDraft = {
   fields: { label: string; value: string }[]
 }
 
+export type ProductRecommendation = {
+  name: string
+  url?: string
+  imageUrl?: string
+  price?: string
+  rating?: string
+  ratingCount?: string
+  fields: { label: string; value: string }[]
+}
+
 function unwrapAngleUrl(value: string): string {
   return value.replace(/<((?:https?:\/\/)[^>\s]+)>/gi, '$1').trim()
 }
@@ -132,11 +142,25 @@ function inlineSegments(text: string): TextSegment[] {
 }
 
 function headingText(line: string): string | null {
-  const hashes = line.match(/^#{1,3}\s+(.+)$/)
+  const hashes = line.match(/^#{1,6}\s+(.+)$/)
   if (hashes?.[1]) return hashes[1].replace(/\*\*/g, '').trim()
   const stars = line.match(/^\*\*(.+)\*\*$/)
   if (stars?.[1]) return stars[1].trim()
   return null
+}
+
+function isSectionHeading(text: string): boolean {
+  return /^(?:product showcase|products?|recommendations?|product details|for your question|overview|summary|ingredients|key benefits|how to use)$/i.test(
+    text.trim(),
+  )
+}
+
+function linkedProductHeading(text: string): { name: string; url: string } | null {
+  const match = text.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/)
+  if (!match?.[1] || !match[2]) return null
+  const url = trimUrl(match[2])
+  if (!isSafeHttpUrl(url)) return null
+  return { name: match[1].replace(/\*\*/g, '').trim(), url }
 }
 
 function fieldFromBullet(line: string): { label: string; value: string } | null {
@@ -148,17 +172,47 @@ function fieldFromBullet(line: string): { label: string; value: string } | null 
   return { label, value }
 }
 
+function fieldFromLine(line: string): { label: string; value: string } | null {
+  const cleaned = line.replace(/^(?:[-*•]|\d+[.)])\s+/, '')
+  const match = cleaned.match(/^([^:]{1,40}):\s*(.+)$/)
+  if (!match?.[1] || !match[2]) return null
+  const label = match[1].replace(/\*\*/g, '').trim()
+  const value = match[2].replace(/<((?:https?:\/\/)[^>\s]+)>/gi, '$1').trim()
+  return { label, value }
+}
+
 function productTitleFromBullet(line: string): string | null {
   const match = line.match(/^[-*•]\s+\*\*([^*]+)\*\*\s*$/)
   return match?.[1]?.trim() || null
 }
 
-function isStepHeading(text: string): boolean {
-  return /^step\s+\d+\s*[:.)-]/i.test(text)
+function normalizeProductName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
-function isBullet(line: string) {
-  return /^[-*•]\s+/.test(line)
+function productNameMatchScore(first: string, second: string): number | null {
+  const firstName = normalizeProductName(first)
+  const secondName = normalizeProductName(second)
+  if (!firstName || !secondName) return null
+  if (firstName === secondName) return Number.MAX_SAFE_INTEGER
+
+  const firstTokens = new Set(firstName.split(' '))
+  const secondTokens = new Set(secondName.split(' '))
+  const shorter = firstTokens.size <= secondTokens.size ? firstTokens : secondTokens
+  const longer = shorter === firstTokens ? secondTokens : firstTokens
+  if (shorter.size < 3 || ![...shorter].every((token) => longer.has(token))) {
+    return null
+  }
+  return shorter.size
+}
+
+function isStepHeading(text: string): boolean {
+  return /^step\s+\d+\s*[:.)-]/i.test(text)
 }
 
 function isListItem(line: string) {
@@ -196,6 +250,9 @@ export function parseAssistantContent(
     if (seen.has(item.url)) {
       const existing = products.find((product) => product.url === item.url)
       if (existing && !existing.imageUrl) existing.imageUrl = item.imageUrl
+      if (existing && !existing.price) existing.price = item.price
+      if (existing && !existing.rating) existing.rating = item.rating
+      if (existing && !existing.ratingCount) existing.ratingCount = item.ratingCount
       continue
     }
     seen.add(item.url)
@@ -271,6 +328,13 @@ export function parseAssistantContent(
 
     const heading = headingText(line)
     if (heading) {
+      if (isSectionHeading(heading)) {
+        flushParagraph()
+        flushList()
+        flushProduct()
+        blocks.push({ type: 'heading', text: heading })
+        continue
+      }
       if (isStepHeading(heading)) {
         flushParagraph()
         flushList()
@@ -278,13 +342,14 @@ export function parseAssistantContent(
         blocks.push({ type: 'heading', text: heading })
         continue
       }
-      startProduct(heading)
+      const linkedProduct = linkedProductHeading(heading)
+      startProduct(linkedProduct?.name || heading, linkedProduct?.url)
       continue
     }
 
     const current = state.product
-    if (current && isBullet(line)) {
-      const field = fieldFromBullet(line)
+    if (current) {
+      const field = fieldFromLine(line)
       if (field) {
         if (field.label === 'Product link' && isSafeHttpUrl(trimUrl(field.value))) {
           current.url = trimUrl(field.value)
@@ -347,5 +412,63 @@ export function parseAssistantContent(
     })
   }
 
+  const matchedUrls = new Set(
+    blocks.flatMap((block) =>
+      block.type === 'product' && block.url ? [block.url] : [],
+    ),
+  )
+  for (const block of blocks) {
+    if (block.type !== 'product' || block.url) continue
+    const candidates = products
+      .filter((product) => !matchedUrls.has(product.url))
+      .flatMap((product) => {
+        const score = productNameMatchScore(block.name, product.name)
+        return score === null ? [] : [{ product, score }]
+      })
+      .sort((a, b) => b.score - a.score)
+    if (!candidates.length || candidates[0].score === candidates[1]?.score) continue
+    block.url = candidates[0].product.url
+    matchedUrls.add(candidates[0].product.url)
+  }
+
   return { blocks, products }
+}
+
+export function getProductRecommendations(
+  raw: string,
+  extraProducts: ProductLink[] = [],
+): ProductRecommendation[] {
+  const parsed = parseAssistantContent(raw, extraProducts)
+  const productBlocks = parsed.blocks.filter(
+    (block): block is Extract<AssistantBlock, { type: 'product' }> =>
+      block.type === 'product',
+  )
+  const seenUrls = new Set<string>()
+  const recommendations: ProductRecommendation[] = productBlocks.map((product) => {
+    if (product.url) seenUrls.add(product.url)
+    const metadata = parsed.products.find((item) => item.url === product.url)
+    return {
+      ...product,
+      imageUrl: metadata?.imageUrl,
+      price: metadata?.price,
+      rating: metadata?.rating,
+      ratingCount: metadata?.ratingCount,
+    }
+  })
+
+  for (const product of parsed.products) {
+    if (seenUrls.has(product.url)) continue
+    seenUrls.add(product.url)
+    recommendations.push({
+      name: product.name,
+      url: product.url,
+      imageUrl: product.imageUrl,
+      price: product.price,
+      rating: product.rating,
+      ratingCount: product.ratingCount,
+      fields: [],
+    })
+  }
+
+  return recommendations
 }

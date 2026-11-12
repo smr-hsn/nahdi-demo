@@ -1,6 +1,5 @@
 import type { Plugin } from 'vite'
 import { readIdrakConfig, type IdrakEnv } from './idrak-config.ts'
-import { handleIdrakProxy } from './idrak-proxy.ts'
 
 export function idrakProxyPlugin(env: IdrakEnv): Plugin {
   const liveConfig = () =>
@@ -20,7 +19,16 @@ export function idrakProxyPlugin(env: IdrakEnv): Plugin {
     name: 'idrak-secure-proxy',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        void handleIdrakProxy(req, res, liveConfig())
+        void server
+          .ssrLoadModule('/server/idrak-proxy.ts')
+          .then((mod) => {
+            const handleIdrakProxy = (
+              mod as {
+                handleIdrakProxy: typeof import('./idrak-proxy.ts').handleIdrakProxy
+              }
+            ).handleIdrakProxy
+            return handleIdrakProxy(req, res, liveConfig())
+          })
           .then((handled) => {
             if (!handled) next()
           })
@@ -29,7 +37,8 @@ export function idrakProxyPlugin(env: IdrakEnv): Plugin {
     },
     configurePreviewServer(server) {
       server.middlewares.use((req, res, next) => {
-        void handleIdrakProxy(req, res, liveConfig())
+        void import('./idrak-proxy.ts')
+          .then(({ handleIdrakProxy }) => handleIdrakProxy(req, res, liveConfig()))
           .then((handled) => {
             if (!handled) next()
           })

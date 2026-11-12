@@ -24,3 +24,20 @@ export function getVisitorIds() {
     voiceSessionId: `voice-${stamp}`,
   }
 }
+
+export function resetVisitorIds() {
+  const stamp = randomId()
+  const ids = {
+    visitorId: `visitor-${stamp}`,
+    voiceSessionId: `voice-${stamp}`,
+  }
+
+  try {
+    sessionStorage.setItem(VISITOR_STORAGE_KEY, stamp)
+    sessionStorage.setItem(SESSION_STORAGE_KEY, ids.visitorId)
+  } catch {
+    return ids
+  }
+
+  return ids
+}

@@ -10,41 +10,54 @@ export function AIChatWidget() {
 
   const {
     messages,
+    voiceTranscript,
+    voiceProductMessage,
+    isFindingVoiceProducts,
+    voiceProductError,
     isSending,
     mode,
+    setMode,
+    voiceId,
+    setVoiceId,
     voiceState,
     voiceError,
-    muted,
-    callStartedAt,
-    availability,
     sendMessage,
     beginVoiceCall,
     hangUpVoiceCall,
-    toggleMute,
-    switchToText,
-  } = useChatSession(contextLabel, isOpen)
+    resetSession,
+  } = useChatSession(contextLabel)
+
+  const closeAssistantPanel = () => {
+    if (
+      ['connecting', 'connected', 'listening', 'speaking', 'muted'].includes(voiceState)
+    ) {
+      void hangUpVoiceCall()
+    }
+    closeAssistant()
+  }
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[80]">
       <AssistantPanel
         isOpen={isOpen}
-        contextLabel={contextLabel}
         suggestedQuestions={suggestedQuestions}
         messages={messages}
+        voiceTranscript={voiceTranscript}
+        voiceProductMessage={voiceProductMessage}
+        isFindingVoiceProducts={isFindingVoiceProducts}
+        voiceProductError={voiceProductError}
         isSending={isSending}
         mode={mode}
+        voiceId={voiceId}
         voiceState={voiceState}
         voiceError={voiceError}
-        muted={muted}
-        callStartedAt={callStartedAt}
-        isAvailable={availability.available}
-        checkedAt={availability.checkedAt}
-        onClose={closeAssistant}
+        onClose={closeAssistantPanel}
+        onReset={resetSession}
         onSend={(value) => void sendMessage(value)}
+        onModeChange={setMode}
+        onVoiceChange={setVoiceId}
         onStartVoice={() => void beginVoiceCall()}
         onEndVoice={() => void hangUpVoiceCall()}
-        onToggleMute={() => void toggleMute()}
-        onSwitchToText={switchToText}
       />
 
       <div className="pointer-events-auto absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))]">

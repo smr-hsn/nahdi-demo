@@ -1,52 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  checkAssistantAvailability,
   createMessageId,
   getVisitorIds,
   sendChatMessage,
   startVoiceSession,
 } from '../services/chatApi'
+import { resetVisitorIds } from '../services/session'
 import type { LiveKitVoiceClient } from '../services/voiceClient'
 import type {
-  AssistantAvailability,
   ChatMessage,
   ChatMode,
+  VoiceTranscriptEntry,
+  VoiceSpeakerId,
   VoiceUiState,
 } from '../types/chat'
 
-const AVAILABILITY_POLL_MS = 120_000
-
-export function useChatSession(contextLabel: string | null, isOpen: boolean) {
-  const [sessionId] = useState(() => getVisitorIds().visitorId)
+export function useChatSession(contextLabel: string | null) {
+  const [visitorIds, setVisitorIds] = useState(() => getVisitorIds())
+  const sessionId = visitorIds.visitorId
+  const voiceSessionId = visitorIds.voiceSessionId
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [voiceTranscript, setVoiceTranscript] = useState<VoiceTranscriptEntry[]>([])
   const [isSending, setIsSending] = useState(false)
   const [mode, setMode] = useState<ChatMode>('text')
+  const [voiceId, setVoiceId] = useState<VoiceSpeakerId>('female_01')
   const [voiceState, setVoiceState] = useState<VoiceUiState>('ready')
   const [voiceError, setVoiceError] = useState<string | null>(null)
-  const [muted, setMuted] = useState(false)
-  const [callStartedAt, setCallStartedAt] = useState<number | null>(null)
-  const [availability, setAvailability] = useState<AssistantAvailability>({
-    available: false,
-    checkedAt: null,
-  })
+  const [voiceProductMessage, setVoiceProductMessage] = useState<ChatMessage | null>(null)
+  const [isFindingVoiceProducts, setIsFindingVoiceProducts] = useState(false)
+  const [voiceProductError, setVoiceProductError] = useState<string | null>(null)
 
   const sendingLock = useRef(false)
+  const voiceProductRequestRef = useRef(0)
+  const voiceAttemptRef = useRef(0)
+  const sessionGenerationRef = useRef(0)
+  const lastVoiceQuestionRef = useRef<VoiceTranscriptEntry | null>(null)
+  const searchedVoiceQuestionRef = useRef<string | null>(null)
   const voiceClientRef = useRef<LiveKitVoiceClient | null>(null)
-
-  const refreshAvailability = useCallback(async () => {
-    const available = await checkAssistantAvailability()
-    setAvailability({ available, checkedAt: new Date().toISOString() })
-    return available
-  }, [])
-
-  useEffect(() => {
-    if (!isOpen) return
-    void refreshAvailability()
-    const id = window.setInterval(() => {
-      void refreshAvailability()
-    }, AVAILABILITY_POLL_MS)
-    return () => window.clearInterval(id)
-  }, [isOpen, refreshAvailability])
 
   useEffect(() => {
     return () => {
@@ -59,6 +49,7 @@ export function useChatSession(contextLabel: string | null, isOpen: boolean) {
       const content = raw.trim()
       if (!content || sendingLock.current) return
 
+      const requestGeneration = sessionGenerationRef.current
       sendingLock.current = true
       setIsSending(true)
       setMode('text')
@@ -81,6 +72,7 @@ export function useChatSession(contextLabel: string | null, isOpen: boolean) {
           contextLabel,
         })
 
+        if (requestGeneration !== sessionGenerationRef.current) return
         if (result.ok) {
           setMessages((prev) => [...prev, result.message])
         } else {
@@ -96,31 +88,172 @@ export function useChatSession(contextLabel: string | null, isOpen: boolean) {
           ])
         }
       } finally {
-        setIsSending(false)
-        sendingLock.current = false
+        if (requestGeneration === sessionGenerationRef.current) {
+          setIsSending(false)
+          sendingLock.current = false
+        }
       }
     },
     [contextLabel, sessionId],
   )
 
+  const findVoiceProducts = useCallback(
+    async (question: VoiceTranscriptEntry, response: VoiceTranscriptEntry) => {
+      if (isKnowledgeBaseMiss(response.content)) {
+        setVoiceProductMessage(null)
+        setVoiceProductError(null)
+        setIsFindingVoiceProducts(false)
+        void voiceClientRef.current?.resumeListening()
+        return
+      }
+
+      const requestId = ++voiceProductRequestRef.current
+      const lookupPrompt = [
+        'Use only the Nahdi product knowledge base.',
+        'Find product-page links only for products named in this voice response. Do not substitute other products.',
+        'Return the exact product name, canonical product URL, image URL if available, and concise details from the knowledge base.',
+        'If no matching product page exists, say so without inventing a URL.',
+        `Customer question: ${question.content.trim().slice(0, 800)}`,
+        `Voice advisor response: ${response.content.trim().slice(0, 2200)}`,
+      ].join('\n\n')
+
+      setIsFindingVoiceProducts(true)
+      setVoiceProductError(null)
+      setVoiceProductMessage(null)
+      void voiceClientRef.current?.resumeListening()
+      try {
+        const result = await sendChatMessage({
+          message: lookupPrompt,
+          sessionId: `voice-products-${crypto.randomUUID().replace(/-/g, '')}`,
+          history: [],
+          contextLabel,
+        })
+        if (
+          requestId !== voiceProductRequestRef.current ||
+          lastVoiceQuestionRef.current?.id !== question.id
+        ) {
+          return
+        }
+        if (result.ok) {
+          if (isKnowledgeBaseMiss(result.message.content)) {
+            setVoiceProductMessage(null)
+          } else {
+            setVoiceProductMessage(result.message)
+          }
+        } else {
+          setVoiceProductError(result.error)
+        }
+      } catch (error) {
+        if (requestId !== voiceProductRequestRef.current) return
+        setVoiceProductError(
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : 'Unable to find verified product links for this voice response.',
+        )
+      } finally {
+        if (requestId === voiceProductRequestRef.current) {
+          setIsFindingVoiceProducts(false)
+        }
+        void voiceClientRef.current?.resumeListening()
+      }
+    },
+    [contextLabel, voiceSessionId],
+  )
+
+  useEffect(() => {
+    if (voiceState !== 'listening' && voiceState !== 'connected') return
+
+    const response = voiceTranscript[voiceTranscript.length - 1]
+    const question = lastVoiceQuestionRef.current
+    if (
+      !response ||
+      response.speaker !== 'assistant' ||
+      !response.final ||
+      !question ||
+      !question.content.trim() ||
+      !response.content.trim() ||
+      searchedVoiceQuestionRef.current === question.id
+    ) {
+      return
+    }
+
+    const questionIndex = voiceTranscript.findIndex((entry) => entry.id === question.id)
+    const responseIndex = voiceTranscript.findIndex((entry) => entry.id === response.id)
+    if (questionIndex === -1 || responseIndex <= questionIndex) return
+
+    searchedVoiceQuestionRef.current = question.id
+
+    if (isKnowledgeBaseMiss(response.content)) {
+      setVoiceProductMessage(null)
+      setVoiceProductError(null)
+      setIsFindingVoiceProducts(false)
+      voiceProductRequestRef.current += 1
+      void voiceClientRef.current?.resumeListening()
+      return
+    }
+
+    void findVoiceProducts(question, response)
+  }, [findVoiceProducts, voiceState, voiceTranscript])
+
+  const resetSession = useCallback(() => {
+    sessionGenerationRef.current += 1
+    voiceProductRequestRef.current += 1
+    voiceAttemptRef.current += 1
+    const client = voiceClientRef.current
+    voiceClientRef.current = null
+    if (client) {
+      void client.disconnect().catch((error: unknown) => {
+        setVoiceError(
+          `The conversation was reset, but the voice connection could not be closed: ${describeVoiceError(error)}`,
+        )
+      })
+    }
+
+    const ids = resetVisitorIds()
+    setVisitorIds(ids)
+    setMessages([])
+    setVoiceTranscript([])
+    lastVoiceQuestionRef.current = null
+    searchedVoiceQuestionRef.current = null
+    setVoiceProductMessage(null)
+    setIsFindingVoiceProducts(false)
+    setVoiceProductError(null)
+    setIsSending(false)
+    sendingLock.current = false
+    setVoiceError(null)
+    setVoiceState('ready')
+  }, [])
+
   const beginVoiceCall = useCallback(async () => {
+    setMode('voice')
     if (voiceState === 'connecting' || voiceState === 'connected' || voiceState === 'listening' || voiceState === 'speaking' || voiceState === 'muted') {
       return
     }
 
-    setMode('voice')
+    const attemptId = ++voiceAttemptRef.current
+    voiceProductRequestRef.current += 1
+    setVoiceTranscript([])
+    lastVoiceQuestionRef.current = null
+    searchedVoiceQuestionRef.current = null
+    setVoiceProductMessage(null)
+    setIsFindingVoiceProducts(false)
+    setVoiceProductError(null)
     setVoiceError(null)
-    setMuted(false)
     setVoiceState('connecting')
 
     try {
       if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+        if (attemptId !== voiceAttemptRef.current) return
         setVoiceState('error')
         setVoiceError('Voice calls require a secure (HTTPS) browser context.')
         return
       }
 
-      const session = await startVoiceSession()
+      const session = await startVoiceSession(voiceId, {
+        visitorId: sessionId,
+        voiceSessionId,
+      })
+      if (attemptId !== voiceAttemptRef.current) return
       if (!session.ok) {
         setVoiceState('error')
         setVoiceError(session.error)
@@ -128,81 +261,98 @@ export function useChatSession(contextLabel: string | null, isOpen: boolean) {
       }
 
       const { LiveKitVoiceClient } = await import('../services/voiceClient')
+      if (attemptId !== voiceAttemptRef.current) return
       const client = new LiveKitVoiceClient({
         onState: (state) => {
+          if (attemptId !== voiceAttemptRef.current) return
           setVoiceState(state)
-          if (state === 'listening' || state === 'speaking' || state === 'muted' || state === 'connected') {
-            setCallStartedAt((prev) => prev ?? Date.now())
-          }
-          if (state === 'disconnected') {
-            setCallStartedAt(null)
-            setMode('text')
-            setMuted(false)
-            window.setTimeout(() => setVoiceState('ready'), 400)
-          }
         },
         onError: (message) => {
+          if (attemptId !== voiceAttemptRef.current) return
           setVoiceError(message)
+        },
+        onTranscription: (entry) => {
+          if (attemptId !== voiceAttemptRef.current) return
+          setVoiceTranscript((previous) => {
+            const index = previous.findIndex((item) => item.id === entry.id)
+            if (index === -1) return [...previous, entry]
+            const next = [...previous]
+            next[index] = {
+              ...entry,
+              final: entry.final || previous[index].final,
+            }
+            return next
+          })
+
+          if (!entry.final) return
+          if (entry.speaker === 'user') {
+            const isNewQuestion = lastVoiceQuestionRef.current?.id !== entry.id
+            lastVoiceQuestionRef.current = entry
+            if (isNewQuestion) {
+              searchedVoiceQuestionRef.current = null
+              setVoiceProductMessage(null)
+              setVoiceProductError(null)
+              setIsFindingVoiceProducts(false)
+              voiceProductRequestRef.current += 1
+            }
+          }
         },
       })
       voiceClientRef.current = client
       await client.connect(session.livekit)
+      if (attemptId !== voiceAttemptRef.current) {
+        await client.disconnect()
+      }
     } catch (error) {
+      if (attemptId !== voiceAttemptRef.current) return
       const message = describeVoiceError(error)
       setVoiceError(message)
       setVoiceState('error')
-      setCallStartedAt(null)
     }
-  }, [voiceState])
+  }, [findVoiceProducts, sessionId, voiceId, voiceSessionId, voiceState])
 
   const hangUpVoiceCall = useCallback(async () => {
-    await voiceClientRef.current?.disconnect()
+    voiceAttemptRef.current += 1
+    const client = voiceClientRef.current
     voiceClientRef.current = null
-    setMuted(false)
-    setCallStartedAt(null)
-    setMode('text')
-    setVoiceState('disconnected')
-    window.setTimeout(() => setVoiceState('ready'), 400)
-  }, [])
-
-  const toggleMute = useCallback(async () => {
-    const next = !muted
-    setMuted(next)
-    await voiceClientRef.current?.setMuted(next)
-  }, [muted])
-
-  const switchToText = useCallback(() => {
-    const inCall = ['connecting', 'connected', 'listening', 'speaking', 'muted'].includes(
-      voiceState,
-    )
-    if (inCall) {
-      void hangUpVoiceCall()
-      return
+    try {
+      await client?.disconnect()
+      setVoiceError(null)
+      setVoiceState('disconnected')
+    } catch (error) {
+      setVoiceError(describeVoiceError(error))
+      setVoiceState('error')
     }
-    setMode('text')
-    setVoiceState('ready')
-    setVoiceError(null)
-  }, [hangUpVoiceCall, voiceState])
+  }, [])
 
   return {
     sessionId,
     messages,
+    voiceTranscript,
+    voiceProductMessage,
+    isFindingVoiceProducts,
+    voiceProductError,
     isSending,
     mode,
     setMode,
+    voiceId,
+    setVoiceId,
     voiceState,
     voiceError,
-    muted,
-    callStartedAt,
-    availability,
-    isApiConfigured: true,
     sendMessage,
     beginVoiceCall,
     hangUpVoiceCall,
-    toggleMute,
-    switchToText,
-    refreshAvailability,
+    resetSession,
   }
+}
+
+function isKnowledgeBaseMiss(content: string): boolean {
+  const normalized = content.trim().toLowerCase().replace(/\s+/g, ' ')
+  return (
+    normalized.includes('could not find this information in the knowledge base') ||
+    normalized.includes("couldn't find this information in the knowledge base") ||
+    normalized.includes('cannot find this information in the knowledge base')
+  )
 }
 
 function describeVoiceError(error: unknown): string {

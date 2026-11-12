@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { idrakProxyPlugin } from './server/vite-plugin.ts'
 
+// Proxy middleware reloads idrak-proxy via ssrLoadModule.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {

@@ -1,7 +1,7 @@
 export { AIChatWidget } from './AIChatWidget'
 export { AssistantLauncher } from './AssistantLauncher'
 export { AssistantPanel } from './AssistantPanel'
-export { CallToAssistant, AssistantHeader } from './CallToAssistant'
+export { AssistantHeader } from './AssistantHeader'
 export { ChatInput } from './ChatInput'
 export { MessageList } from './MessageList'
 export { MessageBubble } from './MessageBubble'

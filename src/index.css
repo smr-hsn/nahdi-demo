@@ -101,10 +101,10 @@ body {
 @keyframes voice-bar {
   0%,
   100% {
-    height: 6px;
+    height: 5px;
   }
   50% {
-    height: 22px;
+    height: 24px;
   }
 }
 
@@ -117,23 +117,59 @@ body {
 }
 
 .voice-bar {
+  height: 6px;
+  animation: none;
+}
+
+.voice-bar-active {
   height: 10px;
   animation: voice-bar 0.9s ease-in-out infinite;
 }
 
+.voice-marquee-viewport {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.voice-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: voice-marquee 16s linear infinite;
+  will-change: transform;
+}
+
+.voice-marquee-item {
+  flex: 0 0 auto;
+  padding-right: 3rem;
+}
+
 .assistant-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  scrollbar-color: #e8cfc6 transparent;
 }
 
 .assistant-scrollbar::-webkit-scrollbar {
-  width: 2px;
-  height: 2px;
+  width: 5px;
+  height: 5px;
 }
 
 .assistant-scrollbar::-webkit-scrollbar-track,
 .assistant-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+}
+
+.assistant-scrollbar::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.assistant-scrollbar::-webkit-scrollbar-thumb {
+  background: #e8cfc6;
+}
+
+@keyframes voice-marquee {
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -143,7 +179,12 @@ body {
 
   .assistant-glow,
   .typing-dot,
-  .voice-bar {
+  .voice-bar-active,
+  .voice-marquee-track {
     animation: none;
+  }
+
+  .voice-marquee-item[aria-hidden='true'] {
+    display: none;
   }
 }

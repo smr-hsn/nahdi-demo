@@ -19,8 +19,8 @@ export function SuggestedQuestions({
 
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 z-20 border-t border-slate-800/80 bg-slate-950/60 px-4 sm:px-5 ${
-        collapsed ? 'h-2' : 'h-12'
+      className={`absolute inset-x-0 bottom-0 z-20 border-t border-blush-200 bg-white/95 px-3 sm:px-4 ${
+        collapsed ? 'h-1.5' : 'h-9'
       }`}
       onMouseEnter={() => {
         if (collapsed) setExpanded(true)
@@ -40,17 +40,17 @@ export function SuggestedQuestions({
           type="button"
           onClick={() => setExpanded((current) => !current)}
           aria-label="Show suggested questions"
-          className={`absolute inset-x-0 top-0 z-10 h-2 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400 ${
+          className={`absolute inset-x-0 top-0 z-10 h-1.5 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400 ${
             expanded ? 'pointer-events-none opacity-0' : ''
           }`}
         >
-          <span className="mx-auto block h-0.5 w-8 rounded-full bg-slate-600" />
+          <span className="mx-auto block h-0.5 w-7 rounded-full bg-blush-300" />
         </button>
       )}
       <ul
-        className={`assistant-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 ${
+        className={`assistant-scrollbar -mx-0.5 flex items-center gap-1 overflow-x-auto px-0.5 ${
           collapsed
-            ? `absolute inset-x-4 bottom-0 z-20 h-12 transition-opacity duration-150 sm:inset-x-5 ${
+            ? `absolute inset-x-3 bottom-0 z-20 h-9 transition-opacity duration-150 sm:inset-x-4 ${
                 expanded
                   ? 'visible opacity-100'
                   : 'invisible pointer-events-none opacity-0'
@@ -65,7 +65,8 @@ export function SuggestedQuestions({
               type="button"
               disabled={disabled}
               onClick={() => onSelect(question)}
-              className="max-w-[15rem] rounded-full border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-left text-[10px] leading-4 text-slate-300 transition hover:border-rose-400/50 hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+              title={question}
+              className="max-w-[13.5rem] truncate rounded-full border border-blush-200 bg-blush-50 px-2.5 py-0.5 text-left text-[9px] leading-4 text-navy-800 transition hover:border-coral-500/60 hover:bg-blush-100 hover:text-navy-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coral-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {question}
             </button>

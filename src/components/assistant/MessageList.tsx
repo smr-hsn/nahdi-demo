@@ -22,18 +22,18 @@ export function MessageList({
   collapseSuggestions,
   onSelectQuestion,
 }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const scroller = scrollerRef.current
+    scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' })
   }, [messages, isSending, showSuggestions])
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-cream via-blush-50 to-white">
       <div
         ref={scrollerRef}
-        className="assistant-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-16 sm:px-5"
+        className="assistant-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-12 sm:px-5"
         aria-live="polite"
         aria-relevant="additions"
       >
@@ -45,7 +45,6 @@ export function MessageList({
 
         {isSending && <TypingIndicator />}
 
-        <div ref={bottomRef} />
       </div>
 
       {showSuggestions && (

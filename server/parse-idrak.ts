@@ -10,30 +10,86 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+function displayValue(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+
+  const record = asRecord(value)
+  if (!record) return undefined
+  const formatted =
+    asString(record.formatted) ||
+    asString(record.formatted_value) ||
+    asString(record.display) ||
+    asString(record.label)
+  if (formatted) return formatted
+  const nested = record.amount ?? record.value ?? record.price
+  if (nested === value) return undefined
+  const display = displayValue(nested)
+  const currency = asString(record.currency) || asString(record.currency_code)
+  if (!display || !currency || display.toLowerCase().includes(currency.toLowerCase())) {
+    return display
+  }
+  return `${currency} ${display}`
+}
+
+function firstDisplayValue(record: JsonRecord, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = displayValue(record[key])
+    if (value) return value
+  }
+  return undefined
+}
+
+const WRAPPER_KEYS = ['data', 'raw', 'result', 'response', 'output', 'payload'] as const
+
+function nestedRecords(payload: unknown): JsonRecord[] {
+  const records: JsonRecord[] = []
+  const seen = new Set<object>()
+  const queue: { value: unknown; depth: number }[] = [{ value: payload, depth: 0 }]
+
+  while (queue.length) {
+    const current = queue.shift()
+    if (!current || current.depth > 4) continue
+    const record = asRecord(current.value)
+    if (!record || seen.has(record)) continue
+    seen.add(record)
+    records.push(record)
+    for (const key of WRAPPER_KEYS) {
+      if (record[key] !== undefined) {
+        queue.push({ value: record[key], depth: current.depth + 1 })
+      }
+    }
+  }
+
+  return records
+}
+
 export type ExtractedProduct = {
   name: string
   url: string
   imageUrl?: string
+  price?: string
+  rating?: string
+  ratingCount?: string
 }
 
 function isHttpUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value)
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 export function extractProducts(payload: unknown): ExtractedProduct[] {
-  const root = asRecord(payload)
-  if (!root) return []
-
-  const nested = [root.data, root.raw, root.result].map(asRecord)
-  const buckets = [
-    root.products,
-    root.items,
-    root.recommendations,
-    nested[0]?.products,
-    nested[0]?.items,
-    nested[1]?.products,
-    nested[2]?.products,
-  ]
+  const records = nestedRecords(payload)
+  if (!records.length) return []
+  const buckets = records.flatMap((record) => [
+    record.products,
+    record.items,
+    record.recommendations,
+  ])
 
   const seen = new Set<string>()
   const products: ExtractedProduct[] = []
@@ -55,25 +111,64 @@ export function extractProducts(payload: unknown): ExtractedProduct[] {
         asString(rec.label)
       if (!url || !name || !isHttpUrl(url) || seen.has(url)) continue
       seen.add(url)
+      const imageCandidates = [
+        rec.image,
+        rec.image_url,
+        rec.imageUrl,
+        rec.thumbnail,
+        ...(Array.isArray(rec.images) ? rec.images : []),
+        ...(Array.isArray(rec.image_urls) ? rec.image_urls : []),
+      ]
       const imageUrl =
-        asString(rec.image) ||
-        asString(rec.image_url) ||
-        asString(rec.thumbnail) ||
-        undefined
+        imageCandidates
+          .map(asString)
+          .find((image): image is string => Boolean(image)) || undefined
+      const currency = asString(rec.currency) || asString(rec.currency_code)
+      const rawPrice = firstDisplayValue(rec, [
+        'price',
+        'formatted_price',
+        'display_price',
+        'final_price',
+        'sale_price',
+        'special_price',
+      ])
+      const price =
+        rawPrice && currency && !rawPrice.toLowerCase().includes(currency.toLowerCase())
+          ? `${currency} ${rawPrice}`
+          : rawPrice
+      const ratingRecord = asRecord(rec.rating)
+      const rating =
+        firstDisplayValue(rec, [
+          'average_rating',
+          'rating_value',
+          'rating_average',
+          'stars',
+          'rating',
+        ]) || (ratingRecord ? firstDisplayValue(ratingRecord, ['value', 'average']) : undefined)
+      const ratingCount =
+        firstDisplayValue(rec, ['rating_count', 'review_count', 'reviews_count']) ||
+        (ratingRecord ? firstDisplayValue(ratingRecord, ['count', 'review_count']) : undefined)
       products.push({
         name,
         url,
-        imageUrl: imageUrl && isHttpUrl(imageUrl) ? imageUrl : undefined,
+        ...(imageUrl && isHttpUrl(imageUrl) ? { imageUrl } : {}),
+        ...(price ? { price } : {}),
+        ...(rating ? { rating } : {}),
+        ...(ratingCount ? { ratingCount } : {}),
       })
     }
   }
 
-  const answer =
-    asString(root.answer) ||
-    asString(root.response) ||
-    asString(asRecord(root.raw)?.answer) ||
-    ''
-  for (const extra of [...extractCitationProducts(root), ...extractProductsFromText(answer)]) {
+  const answers = records.flatMap((record) => [
+    asString(record.answer),
+    asString(record.response),
+    asString(record.message),
+    asString(record.output),
+  ])
+  for (const extra of [
+    ...extractCitationProducts(payload),
+    ...answers.filter((answer): answer is string => Boolean(answer)).flatMap(extractProductsFromText),
+  ]) {
     if (seen.has(extra.url)) continue
     seen.add(extra.url)
     products.push(extra)
@@ -125,51 +220,37 @@ export function extractProductsFromText(text: string): ExtractedProduct[] {
 }
 
 function extractCitationProducts(payload: unknown): ExtractedProduct[] {
-  const root = asRecord(payload)
-  const citations = root?.citations
-  if (!Array.isArray(citations)) return []
   const products: ExtractedProduct[] = []
   const seen = new Set<string>()
-  for (const item of citations) {
-    const rec = asRecord(item)
-    if (!rec) continue
-    const url =
-      asString(rec.url) ||
-      asString(rec.link) ||
-      asString(rec.source_url) ||
-      asString(rec.href)
-    const name =
-      asString(rec.title) ||
-      asString(rec.name) ||
-      asString(rec.document) ||
-      asString(rec.source)
-    if (!url || !isHttpUrl(url) || seen.has(url)) continue
-    seen.add(url)
-    products.push({ name: name || url, url })
+  for (const record of nestedRecords(payload)) {
+    if (!Array.isArray(record.citations)) continue
+    for (const item of record.citations) {
+      const rec = asRecord(item)
+      if (!rec) continue
+      const url =
+        asString(rec.url) ||
+        asString(rec.link) ||
+        asString(rec.source_url) ||
+        asString(rec.href)
+      const name =
+        asString(rec.title) ||
+        asString(rec.name) ||
+        asString(rec.document) ||
+        asString(rec.source)
+      if (!url || !isHttpUrl(url) || seen.has(url)) continue
+      seen.add(url)
+      products.push({ name: name || url, url })
+    }
   }
   return products
 }
 
 export function extractAskAnswer(payload: unknown): string | null {
-  const root = asRecord(payload)
-  if (!root) return null
-
-  const nested = [root.raw, root.data, root.result].map(asRecord)
-  const candidates = [
-    root.answer,
-    root.response,
-    root.message,
-    root.output,
-    nested[0]?.answer,
-    nested[0]?.response,
-    nested[1]?.answer,
-    nested[1]?.response,
-    typeof nested[2]?.answer === 'string' ? nested[2].answer : null,
-  ]
-
-  for (const candidate of candidates) {
-    const text = asString(candidate)
-    if (text) return text
+  for (const record of nestedRecords(payload)) {
+    for (const key of ['answer', 'response', 'message', 'output'] as const) {
+      const text = asString(record[key])
+      if (text) return text
+    }
   }
 
   return null
